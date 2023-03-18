@@ -1,0 +1,60 @@
+name: Trigger auto deployment for stefan-githb-case
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ main ]
+    paths:
+    - '**'
+    - '.github/workflows/stefan-githb-case-AutoDeployTrigger-fda2eb46-5098-479e-be9d-b6284aa0e41e.yml'
+
+  # Allow mannually trigger 
+  workflow_dispatch:      
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to container registry
+        uses: docker/login-action@v1
+        with:
+          registry: containerappacr91.azurecr.io
+          username: ${{ secrets.STEFANGITHBCASE_REGISTRY_USERNAME }}
+          password: ${{ secrets.STEFANGITHBCASE_REGISTRY_PASSWORD }}
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v2
+        with:
+          push: true
+          tags: containerappacr91.azurecr.io/api-album:${{ github.sha }}
+          file: ./Dockerfile
+          context: ./
+
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.STEFANGITHBCASE_AZURE_CREDENTIALS }}
+
+
+      - name: Deploy to containerapp
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az config set extension.use_dynamic_install=yes_without_prompt
+            az containerapp registry set -n stefan-githb-case -g containerapp-rg --server containerappacr91.azurecr.io --username  ${{ secrets.STEFANGITHBCASE_REGISTRY_USERNAME }} --password ${{ secrets.STEFANGITHBCASE_REGISTRY_PASSWORD }}
+            az containerapp update -n stefan-githb-case -g containerapp-rg --image containerappacr91.azurecr.io/api-album:${{ github.sha }}
